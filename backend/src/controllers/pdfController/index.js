@@ -1,7 +1,8 @@
 const pug = require('pug');
 const fs = require('fs');
 const moment = require('moment');
-let pdf = require('html-pdf');
+// Reemplaza 'html-pdf' con 'puppeteer'
+const puppeteer = require('puppeteer');
 const { listAllSettings, loadSettings } = require('@/middlewares/settings');
 const { getData } = require('@/middlewares/serverData');
 const useLanguage = require('@/locale/useLanguage');
@@ -14,22 +15,21 @@ require('dotenv').config({ path: '.env.local' });
 
 exports.generatePdf = async (
   modelName,
-  info = { filename: 'pdf_file', format: 'A5', targetLocation: '' },
+  info = { filename: 'pdf_file', format: 'A5', orientation: 'portrait', targetLocation: '' },
   result,
   callback
 ) => {
   try {
     const { targetLocation } = info;
 
-    // if PDF already exists, then delete it and create a new PDF
+    // Si el PDF ya existe, lo eliminamos para crear uno nuevo
     if (fs.existsSync(targetLocation)) {
       fs.unlinkSync(targetLocation);
     }
 
-    // render pdf html
-
+    // Renderizar el contenido HTML
     if (pugFiles.includes(modelName.toLowerCase())) {
-      // Compile Pug template
+      // Compilar la plantilla Pug
 
       const settings = await loadSettings();
       const selectedLang = settings['idurar_app_language'];
@@ -67,16 +67,32 @@ exports.generatePdf = async (
         moment: moment,
       });
 
-      pdf
-        .create(htmlContent, {
-          format: info.format,
-          orientation: 'portrait',
-          border: '10mm',
-        })
-        .toFile(targetLocation, function (error) {
-          if (error) throw new Error(error);
-          if (callback) callback();
-        });
+      // Generar PDF usando Puppeteer
+      const browser = await puppeteer.launch({
+        args: ['--no-sandbox', '--disable-setuid-sandbox'],
+      });
+      const page = await browser.newPage();
+      await page.setContent(htmlContent, { waitUntil: 'networkidle0' });
+
+      const { format, orientation } = info;
+      const isLandscape = orientation === 'landscape';
+
+      await page.pdf({
+        path: targetLocation,
+        format: format || 'A4',
+        landscape: isLandscape,
+        printBackground: true,
+        margin: {
+          top: '10mm',
+          right: '10mm',
+          bottom: '10mm',
+          left: '10mm',
+        },
+      });
+
+      await browser.close();
+
+      if (callback) callback();
     }
   } catch (error) {
     throw new Error(error);
